@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.6.11;
-pragma experimental ABIEncoderV2;
+pragma solidity 0.7.6;
 
 interface IFoundry {
     function balanceOf(address _director) external view returns (uint256);

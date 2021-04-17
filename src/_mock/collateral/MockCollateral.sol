@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.6.11;
+pragma solidity 0.7.6;
 
 contract MockCollateral {
-    string private _name;
-    string private _symbol;
-    uint8 private _decimals;
+    string public name;
+    string public symbol;
+    uint8 public decimals;
 
     address private _owner;
 
@@ -32,26 +32,14 @@ contract MockCollateral {
     }
 
     constructor(
-        string memory name,
-        string memory symbol,
-        uint8 decimals
-    ) public {
-        _name = name;
-        _symbol = symbol;
-        _decimals = decimals;
+        string memory _name,
+        string memory _symbol,
+        uint8 _decimals
+    ) {
+        name = _name;
+        symbol = _symbol;
+        decimals = _decimals;
         _owner = msg.sender;
-    }
-
-    function name() public view returns (string memory) {
-        return _name;
-    }
-
-    function symbol() public view returns (string memory) {
-        return _symbol;
-    }
-
-    function decimals() public view returns (uint8) {
-        return _decimals;
     }
 
     function _move(

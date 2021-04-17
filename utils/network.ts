@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import {DeployFunction} from 'hardhat-deploy/types';
 export function node_url(networkName: string): string {
   if (networkName) {
     const uri = process.env['ETH_NODE_URI_' + networkName.toUpperCase()];
@@ -44,6 +45,12 @@ export function accounts(networkName?: string): {mnemonic: string} {
 
 export const etherscanApiKey = (): string => {
   return (
-    process.env['ETHERSCAN_API_KEY'] || ''
+    process.env['ETHERSCAN_API_KEY'] || 'QSNF1YA28E279HSW9BYBPMB8ZG99KZS3TS'
   );
+};
+
+export const skipTags = (func: DeployFunction): void => {
+  func.skip = async (hre) => {
+    return !func.tags?.includes(hre.network.name);
+  };
 };

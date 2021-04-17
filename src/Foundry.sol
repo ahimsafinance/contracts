@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.6.11;
+pragma solidity 0.7.6;
 pragma experimental ABIEncoderV2;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -36,7 +36,7 @@ contract ShareWrapper {
 
     function withdraw(uint256 amount) public virtual {
         uint256 blacksmithShare = _balances[msg.sender];
-        require(blacksmithShare >= amount, "Boardroom: withdraw request greater than staked amount");
+        require(blacksmithShare >= amount, "withdraw > staked");
         _totalSupply = _totalSupply.sub(amount);
         _balances[msg.sender] = blacksmithShare.sub(amount);
         IERC20(share).safeTransfer(msg.sender, amount);
@@ -67,14 +67,15 @@ contract Foundry is ShareWrapper, ReentrancyGuard, Operator {
     // flags
     bool public initialized = false;
 
-    address public collateral;
     address public treasury;
-    address public oracle; // oracle to get price of collateral
+    address public collateral;
+    // address public oracle; // oracle to get price of collateral
 
     mapping(address => FoundryPosition) public blacksmiths;
     FoundrySnapshot[] public foundryHistory;
 
     uint256 public withdrawLockupEpochs;
+    uint256 public constant PRECISION = 1e6;
 
     /* ========== EVENTS ========== */
 
@@ -86,13 +87,13 @@ contract Foundry is ShareWrapper, ReentrancyGuard, Operator {
 
     /* ========== Modifiers =============== */
     modifier blacksmithExists {
-        require(balanceOf(msg.sender) > 0, "Foundry: The blacksmith does not exist");
+        require(balanceOf(msg.sender) > 0, "!staked");
         _;
     }
 
     modifier updateReward(address blacksmith) {
         if (blacksmith != address(0)) {
-            FoundryPosition memory position = blacksmiths[blacksmith];
+            FoundryPosition storage position = blacksmiths[blacksmith];
             position.rewardEarned = earned(blacksmith);
             position.lastSnapshotIndex = latestSnapshotIndex();
             blacksmiths[blacksmith] = position;
@@ -101,7 +102,7 @@ contract Foundry is ShareWrapper, ReentrancyGuard, Operator {
     }
 
     modifier notInitialized {
-        require(!initialized, "Foundry: already initialized");
+        require(!initialized, "alreadyInitialized");
         _;
     }
 
@@ -123,7 +124,7 @@ contract Foundry is ShareWrapper, ReentrancyGuard, Operator {
 
         FoundrySnapshot memory genesisSnapshot = FoundrySnapshot({time: block.number, rewardReceived: 0, rewardPerShare: 0});
         foundryHistory.push(genesisSnapshot);
-        withdrawLockupEpochs = 8; // Lock for 8 epochs before release withdraw
+        withdrawLockupEpochs = 4; // Lock for 8 epochs before release withdraw
         initialized = true;
         emit Initialized(msg.sender, block.number);
     }
@@ -131,10 +132,6 @@ contract Foundry is ShareWrapper, ReentrancyGuard, Operator {
     function setLockUp(uint256 _withdrawLockupEpochs) external onlyOperator {
         require(_withdrawLockupEpochs <= 56, "_withdrawLockupEpochs: out of range"); // <= 2 week
         withdrawLockupEpochs = _withdrawLockupEpochs;
-    }
-
-    function setOracle(address _oracle) external onlyOperator {
-        oracle = _oracle;
     }
 
     /* ========== VIEW FUNCTIONS ========== */
@@ -147,19 +144,22 @@ contract Foundry is ShareWrapper, ReentrancyGuard, Operator {
             uint256,
             uint256,
             uint256,
-            uint256,
             uint256
         )
     {
-        (uint256 _epoch, uint256 _nextEpochPoint, uint256 _epoch_length, uint256 _utilizationRatio) = ITreasury(treasury).epochInfo();
+        (uint256 _epoch, uint256 _nextEpochPoint, uint256 _epoch_length) = ITreasury(treasury).epochInfo();
         return (
             _epoch, // current epoch
             _nextEpochPoint, // next epoch point
             _epoch_length, // epoch duration
-            _utilizationRatio, // utilization ratio
-            totalSupply(),
-            IOracle(oracle).consult() // collateral price
+            utilizationRatio(), // utilization ratio
+            totalSupply()
+            // IOracle(oracle).consult() // collateral price
         );
+    }
+
+    function utilizationRatio() public view returns (uint256) {
+        return ITreasury(treasury).utilizationRatio(address(this));
     }
 
     // =========== Snapshot getters
@@ -180,7 +180,7 @@ contract Foundry is ShareWrapper, ReentrancyGuard, Operator {
         return foundryHistory[getLastSnapshotIndexOf(blacksmith)];
     }
 
-    function canWithdraw(address blacksmith) external view returns (bool) {
+    function canWithdraw(address blacksmith) public view returns (bool) {
         return blacksmiths[blacksmith].epochTimerStart.add(withdrawLockupEpochs) <= ITreasury(treasury).epoch();
     }
 
@@ -189,7 +189,7 @@ contract Foundry is ShareWrapper, ReentrancyGuard, Operator {
     }
 
     function nextEpochPoint() external view returns (uint256) {
-        return ITreasury(treasury).nextEpochPoint();
+        return ITreasury(treasury).nextEpochTimestamp();
     }
 
     // =========== blacksmith getters
@@ -209,17 +209,17 @@ contract Foundry is ShareWrapper, ReentrancyGuard, Operator {
 
     function stake(uint256 amount) public override nonReentrant updateReward(msg.sender) {
         require(amount > 0, "Foundry: Cannot stake 0");
-        super.stake(amount);
         blacksmiths[msg.sender].epochTimerStart = ITreasury(treasury).epoch(); // reset timer
         emit Staked(msg.sender, amount);
+        super.stake(amount);
     }
 
     function withdraw(uint256 amount) public override nonReentrant blacksmithExists updateReward(msg.sender) {
         require(amount > 0, "Foundry: Cannot withdraw 0");
-        require(blacksmiths[msg.sender].epochTimerStart.add(withdrawLockupEpochs) <= ITreasury(treasury).epoch(), "Foundry: still in withdraw lockup");
+        require(canWithdraw(msg.sender), "Foundry: still in withdraw lockup");
         claimReward();
-        super.withdraw(amount);
         emit Withdrawn(msg.sender, amount);
+        super.withdraw(amount);
     }
 
     function exit() external {
@@ -247,7 +247,7 @@ contract Foundry is ShareWrapper, ReentrancyGuard, Operator {
         FoundrySnapshot memory newSnapshot = FoundrySnapshot({time: block.number, rewardReceived: amount, rewardPerShare: nextRPS});
         foundryHistory.push(newSnapshot);
 
-        IERC20(collateral).safeTransferFrom(msg.sender, address(this), amount);
+        // collateral().safeTransferFrom(msg.sender, address(this), amount);
         emit RewardAdded(msg.sender, amount);
     }
 }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.6.11;
+pragma solidity 0.7.6;
+pragma experimental ABIEncoderV2;
 
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "../libs/FixedPoint.sol";
@@ -13,7 +14,7 @@ contract VSwapPairOracle is Operator, IPairOracle {
     using FixedPoint for *;
     using SafeMath for uint256;
 
-    uint256 public PERIOD = 600; // 10-minute TWAP (time-weighted average price)
+    uint256 public PERIOD = 600; // 1-hour TWAP (time-weighted average price)
 
     IValueLiquidPair public immutable pair;
     address public immutable token0;
@@ -25,11 +26,14 @@ contract VSwapPairOracle is Operator, IPairOracle {
     FixedPoint.uq112x112 public price0Average;
     FixedPoint.uq112x112 public price1Average;
 
-    constructor(address pairAddress) public {
+    address public mainToken;
+
+    constructor(address pairAddress, address _mainToken) {
         IValueLiquidPair _pair = IValueLiquidPair(pairAddress);
         pair = _pair;
         token0 = _pair.token0();
         token1 = _pair.token1();
+        mainToken = _mainToken;
         price0CumulativeLast = _pair.price0CumulativeLast(); // Fetch the current accumulated price value (1 / 0)
         price1CumulativeLast = _pair.price1CumulativeLast(); // Fetch the current accumulated price value (0 / 1)
         uint112 reserve0;
@@ -59,7 +63,7 @@ contract VSwapPairOracle is Operator, IPairOracle {
     }
 
     // Note this will always return 0 before update has been called successfully for the first time.
-    function consult(address token, uint256 amountIn) external view override returns (uint256 amountOut) {
+    function consult(address token, uint256 amountIn) public view override returns (uint256 amountOut) {
         if (token == token0) {
             amountOut = price0Average.mul(amountIn).decode144();
         } else {
@@ -68,8 +72,12 @@ contract VSwapPairOracle is Operator, IPairOracle {
         }
     }
 
+    function twap(uint256 _amountIn) external view override returns (uint256) {
+        return consult(mainToken, _amountIn);
+    }
+
     function currentBlockTimestamp() internal view returns (uint32) {
-        return uint32(block.timestamp % 2**32);
+        return uint32(block.timestamp);
     }
 
     // produces the cumulative price using counterfactuals to save gas and avoid a call to sync.

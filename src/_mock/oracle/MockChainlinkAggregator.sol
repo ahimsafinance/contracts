@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.6.11;
+pragma solidity 0.7.6;
 pragma experimental ABIEncoderV2;
 
 contract MockChainlinkAggregator {
     int256 public mock_price;
     uint8 public mock_decimals;
 
-    constructor(int256 _mock_price, uint8 _decimals) public {
+    constructor(int256 _mock_price, uint8 _decimals) {
         mock_price = _mock_price;
         mock_decimals = _decimals;
     }

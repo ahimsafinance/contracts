@@ -1,1 +1,0 @@
-# Ahimsa.finance - Solidity Contracts

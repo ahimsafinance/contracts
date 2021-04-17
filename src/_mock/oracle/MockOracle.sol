@@ -3,10 +3,10 @@
 pragma solidity 0.7.6;
 
 import "@openzeppelin/contracts/math/SafeMath.sol";
-import "../../interfaces/IPairOracle.sol";
+import "../../interfaces/IOracle.sol";
 import "../../Operator.sol";
 
-contract MockPairOracle is IPairOracle, Operator {
+contract MockOracle is IOracle, Operator {
     using SafeMath for uint256;
 
     uint256 public mockPrice;
@@ -17,15 +17,9 @@ contract MockPairOracle is IPairOracle, Operator {
         mockPrice = _mockPrice;
     }
 
-    function consult(address, uint256 amountIn) external view override returns (uint256 amountOut) {
-        return mockPrice.mul(amountIn).div(PRICE_PRECISION);
+    function consult() external view override returns (uint256 amountOut) {
+        return mockPrice;
     }
-
-    function twap(uint256 amountIn) external view override returns (uint256 amountOut) {
-        return mockPrice.mul(amountIn).div(PRICE_PRECISION);
-    }
-
-    function update() external override {}
 
     function setPeriod(uint256 _period) external onlyOperator {
         PERIOD = _period;
